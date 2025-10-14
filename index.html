@@ -12,10 +12,13 @@
     .output { white-space: pre-wrap; background: #fff; padding: 10px; border: 1px solid #ccc; }
     .warning { color: red; font-weight: bold; margin-top: 10px; }
     .tag-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .highlight-box { background: #fff; border: 1px solid #ccc; padding: 10px; font-family: monospace; white-space: pre-wrap; margin-bottom: 10px; }
+    .invalid { color: red; font-weight: bold; }
   </style>
 </head>
 <body>
-<p>Version 0.01 | 14.10.25 22:32</p>
+
+<p>Version 0.03 | 14.10.25 22:52</p>
 <h2>🔧 Palo Alto Object Generator</h2>
 
 <label>Destination Address Group Name:</label>
@@ -36,7 +39,10 @@
 </div>
 
 <label>List of IPs or FQDNs (one per line):</label>
-<textarea id="inputList" rows="10" placeholder="192.168.0.1\ngoogle.de/truncateme"></textarea>
+<textarea id="inputList" rows="10" placeholder="192.168.0.1/32,Notebook von Julian\ngoogle.de,Google website\n192.168.0.266,Invalid IP test"></textarea>
+
+<label>Input Preview (invalid IPs highlighted):</label>
+<div class="highlight-box" id="previewBox"></div>
 
 <label>Generated CLI Output:</label>
 <div class="warning" id="warningBox"></div>
@@ -52,6 +58,15 @@ function isValidCIDR(mask) {
   return !isNaN(num) && num >= 0 && num <= 32;
 }
 
+function isValidIP(ip) {
+  const parts = ip.split(".");
+  if (parts.length !== 4) return false;
+  return parts.every(p => {
+    const n = parseInt(p);
+    return !isNaN(n) && n >= 0 && n <= 255;
+  });
+}
+
 function generateCommands() {
   const groupName = document.getElementById("groupName").value.trim();
   const altPrefix = document.getElementById("altPrefix").value.trim();
@@ -64,6 +79,7 @@ function generateCommands() {
   const addressObjects = [];
   const commands = [];
   const warnings = [];
+  const previewLines = [];
 
   commands.push("configure");
 
@@ -72,26 +88,46 @@ function generateCommands() {
     commands.push(`set shared tag ${tagName} comments "Auto-generated tag for ${tagInput || groupName}"`);
   }
 
-  inputList.forEach(entry => {
-    entry = entry.trim();
-    let isIP = /^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)(\.(?!$)|$)){4}$/.test(entry);
-    let ip = "", mask = "", fqdn = "";
+  inputList.forEach(line => {
+    const [rawEntry, customDesc] = line.split(",").map(s => s.trim());
+    let entry = rawEntry;
+    let description = customDesc || "";
 
-    if (isIP) {
-      if (entry.includes("/")) {
-        [ip, mask] = entry.split("/");
-        if (!isValidCIDR(mask)) {
-          warnings.push(`⚠️ Invalid subnet mask "/${mask}" for ${ip} — skipped.`);
-          return;
-        }
+    let ip = "", mask = "", fqdn = "";
+    let isIP = false;
+    let isInvalidIP = false;
+
+    if (entry.includes("/")) {
+      const [ipPart, cidrPart] = entry.split("/");
+      if (isValidIP(ipPart) && isValidCIDR(cidrPart)) {
+        isIP = true;
+        ip = ipPart;
+        mask = cidrPart;
         entry = `${ip}/${mask}`;
+      } else if (isValidIP(ipPart)) {
+        warnings.push(`⚠️ Invalid subnet mask "/${cidrPart}" for ${ipPart} — skipped.`);
+        previewLines.push(`<span class="invalid">${line}</span>`);
+        return;
       } else {
-        entry += "/32";
-        ip = entry.split("/")[0];
+        isInvalidIP = true;
       }
+    } else if (isValidIP(entry)) {
+      isIP = true;
+      ip = entry;
+      entry += "/32";
+    } else if (/^\d{1,3}(\.\d{1,3}){3}$/.test(entry)) {
+      isInvalidIP = true;
     } else {
       fqdn = entry.split("/")[0];
       entry = fqdn;
+    }
+
+    if (isInvalidIP) {
+      previewLines.push(`<span class="invalid">${line}</span>`);
+      warnings.push(`⚠️ Invalid IP "${entry}" — skipped.`);
+      return;
+    } else {
+      previewLines.push(line);
     }
 
     const baseName = sanitizeName(entry);
@@ -104,10 +140,10 @@ function generateCommands() {
 
     if (isIP) {
       commands.push(`set shared address ${objectName} ip-netmask ${entry}`);
-      commands.push(`set shared address ${objectName} description "${altPrefix || ip || entry}"`);
+      commands.push(`set shared address ${objectName} description "${description || ip}"`);
     } else {
       commands.push(`set shared address ${objectName} fqdn ${entry}`);
-      commands.push(`set shared address ${objectName} description "${altPrefix || fqdn}"`);
+      commands.push(`set shared address ${objectName} description "${description || fqdn}"`);
     }
 
     if (useTag) {
@@ -123,6 +159,7 @@ function generateCommands() {
 
   document.getElementById("outputBox").textContent = commands.join("\n");
   document.getElementById("warningBox").textContent = warnings.join("\n");
+  document.getElementById("previewBox").innerHTML = previewLines.join("<br>");
 }
 
 document.getElementById("groupName").addEventListener("input", generateCommands);
