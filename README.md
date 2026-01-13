@@ -7,4 +7,4 @@ This code will be auto deployed after each change to the following Cloudflare Pa
 
 
 # ToDos
-1. If an IP host (IP.IP.IP.IP/Mask) is defined, use the description as Hostname.
+1. If an IP host (IP.IP.IP.IP/Mask) is defined, use the description as a Hostname.
