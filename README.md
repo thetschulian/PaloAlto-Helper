@@ -8,9 +8,10 @@ This code will be auto deployed after each change to the following Cloudflare Pa
 ---
 
 # Changelog 
-> Version 0.15: IP Addresses will now use the Description as Hostname
-> 
-> Changed Layout and added a Tab for upcoming Features
+> Version 0.15:
+>>IP Addresses will now use the Description as Hostname
+>>
+>> Changed Layout and added a Tab for upcoming Features
 
 ---
 
