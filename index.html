@@ -28,10 +28,33 @@
     .group-wide { flex: 1; }
 
     textarea { width: 100%; margin: 10px 0; padding: 8px; font-family: monospace; }
-    .output { white-space: pre-wrap; background: #fff; padding: 10px; border: 1px solid #ccc; }
-    .warning { color: red; font-weight: bold; margin-top: 10px; }
-    .highlight-box { background: #fff; border: 1px solid #ccc; padding: 10px; font-family: monospace; white-space: pre-wrap; margin-bottom: 10px; }
+
+    .output {
+      white-space: pre-wrap;
+      background: #fff;
+      padding: 10px;
+      border: 1px solid #ccc;
+    }
+
+    .warning {
+      color: red;
+      font-weight: bold;
+      margin-top: 10px;
+      white-space: pre-wrap;   /* FIX: warnings wrap correctly */
+      word-break: break-word;  /* FIX: long warnings break */
+    }
+
+    .highlight-box {
+      background: #fff;
+      border: 1px solid #ccc;
+      padding: 10px;
+      font-family: monospace;
+      white-space: pre-wrap;
+      margin-bottom: 10px;
+    }
+
     .invalid { color: red; font-weight: bold; }
+
     .footer { text-align: right; margin-top: 18px; }
 
     .disabled {
@@ -54,7 +77,7 @@
 <h2>🔧 Panorama <u>shared</u> Object Generator</h2>
 
 <!-- GROUP PREFIX -->
-<label>GroupObject Prefix + GroupObject Name:</label>
+<label>Group Prefix + Group Name:</label>
 <div class="row">
   <input type="checkbox" id="usePrefix">
   <label for="usePrefix">Use Prefix</label>
@@ -65,13 +88,13 @@
 </div>
 
 <!-- OBJECT PREFIX -->
-<label>AddressObject Name Prefix + Optional Prefix:</label>
+<label>Object Name Prefix Options:</label>
 <div class="row">
   <input type="checkbox" id="useObjectPrefix">
   <label for="useObjectPrefix">Use Prefix</label>
 
   <input type="text" id="namePrefix" class="prefix-small disabled" placeholder="S_" disabled>
-  <input type="text" id="altPrefix" class="group-wide disabled" placeholder="Optional prefix to Group Address Objects together (e.g. CF)" disabled>
+  <input type="text" id="altPrefix" class="group-wide disabled" placeholder="Optional grouping prefix (e.g. CLOUDFLARE)" disabled>
 </div>
 
 <!-- TAG OPTIONS -->
@@ -147,46 +170,27 @@ function updatePrefixStates() {
   const tagName = document.getElementById("tagName");
 
   /* GROUP PREFIX */
-  if (usePrefix) {
-    prefixName.disabled = false;
-    prefixName.classList.remove("disabled");
-  } else {
-    prefixName.disabled = true;
-    prefixName.classList.add("disabled");
-  }
+  prefixName.disabled = !usePrefix;
+  prefixName.classList.toggle("disabled", !usePrefix);
 
   /* OBJECT PREFIX */
-  if (useObjectPrefix) {
-    namePrefix.disabled = false;
-    namePrefix.classList.remove("disabled");
+  namePrefix.disabled = !useObjectPrefix;
+  namePrefix.classList.toggle("disabled", !useObjectPrefix);
 
-    if (namePrefix.value.trim().length >= 1) {
-      altPrefix.disabled = false;
-      altPrefix.classList.remove("disabled");
-    } else {
-      altPrefix.disabled = true;
-      altPrefix.classList.add("disabled");
-      altPrefix.value = "";
-    }
-
+  if (useObjectPrefix && namePrefix.value.trim().length >= 1) {
+    altPrefix.disabled = false;
+    altPrefix.classList.remove("disabled");
   } else {
-    namePrefix.disabled = true;
-    namePrefix.classList.add("disabled");
-
     altPrefix.disabled = true;
     altPrefix.classList.add("disabled");
     altPrefix.value = "";
   }
 
   /* TAG FIELD */
-  if (useTag) {
-    tagName.disabled = false;
-    tagName.classList.remove("disabled");
-  } else {
-    tagName.disabled = true;
-    tagName.classList.add("disabled");
-    tagName.value = "";
-  }
+  tagName.disabled = !useTag;
+  tagName.classList.toggle("disabled", !useTag);
+
+  if (!useTag) tagName.value = "";
 }
 
 /* ------------------ Main Generator ------------------ */
@@ -201,39 +205,53 @@ function generateCommands() {
   const tagInput = document.getElementById("tagName").value.trim();
   const rawLines = document.getElementById("inputList").value.split("\n");
 
-  /* GROUP PREFIX FIXED LOGIC */
+  const warnings = [];
+  const previewLines = [];
+  const commands = [];
+  const addressObjects = [];
+  const seenEntries = new Set();
+
+  commands.push("configure");
+
+  /* ------------------ GROUP PREFIX ------------------ */
+
   const usePrefix = document.getElementById("usePrefix").checked;
   let prefixName = document.getElementById("prefixName").value.trim();
 
   if (usePrefix) {
     prefixName = sanitizeName(prefixName);
-
-    // FIX: only add underscore when prefixName has ≥1 character
-    if (prefixName.length >= 1 && !prefixName.endsWith("_")) {
-      prefixName += "_";
-    }
-
+    if (prefixName.length >= 1 && !prefixName.endsWith("_")) prefixName += "_";
   } else {
     prefixName = "";
   }
 
-  const tagName = "S_" + sanitizeName(tagInput || groupName);
+  /* ------------------ GROUP NAME + LENGTH CHECK ------------------ */
 
-  let groupFullName = sanitizeName(groupName).slice(0, 58);
+  let groupFullName = sanitizeName(groupName);
   groupFullName = prefixName + groupFullName;
 
-  const addressObjects = [];
-  const commands = [];
-  const warnings = [];
-  const previewLines = [];
-  const seenEntries = new Set();
+  if (groupFullName.length > 63) {
+    warnings.push(`⚠️ Group name "${groupFullName}" exceeds 63 characters and was truncated.`);
+  }
 
-  commands.push("configure");
+  groupFullName = groupFullName.slice(0, 63);
+
+  /* ------------------ TAG NAME + LENGTH CHECK ------------------ */
+
+  let tagName = "S_" + sanitizeName(tagInput || groupName);
+
+  if (tagName.length > 63) {
+    warnings.push(`⚠️ Tag name "${tagName}" exceeds 63 characters and was truncated.`);
+  }
+
+  tagName = tagName.slice(0, 63);
 
   if (useTag) {
     commands.push(`set shared tag ${tagName} color color32`);
     commands.push(`set shared tag ${tagName} comments "Auto-generated tag for ${tagInput || groupName}"`);
   }
+
+  /* ------------------ PROCESS INPUT LINES ------------------ */
 
   rawLines.forEach((lineRaw, index) => {
     const line = lineRaw.trim();
@@ -281,6 +299,8 @@ function generateCommands() {
 
     previewLines.push(escapeHtml(line));
 
+    /* ------------------ OBJECT NAME ------------------ */
+
     let baseName = isIP ? sanitizeName(description || rawEntry) : sanitizeName(rawEntry);
 
     let objectName;
@@ -305,8 +325,16 @@ function generateCommands() {
       objectName = baseName;
     }
 
-    objectName = objectName.slice(0, 62);
+    /* ------------------ OBJECT NAME LENGTH CHECK ------------------ */
+
+    if (objectName.length > 63) {
+      warnings.push(`⚠️ Object name "${objectName}" exceeds 63 characters and was truncated.`);
+    }
+
+    objectName = objectName.slice(0, 63);
     addressObjects.push(objectName);
+
+    /* ------------------ CLI COMMANDS ------------------ */
 
     if (isIP) {
       commands.push(`set shared address ${objectName} ip-netmask ${entry}`);
@@ -321,11 +349,16 @@ function generateCommands() {
     }
   });
 
+  /* ------------------ GROUP COMMAND ------------------ */
+
   commands.push(`set shared address-group ${groupFullName} static [ ${addressObjects.join(" ")} ]`);
   commands.push(`set shared address-group ${groupFullName} description "Auto-generated group for ${groupName}"`);
+
   if (useTag) {
     commands.push(`set shared address-group ${groupFullName} tag ${tagName}`);
   }
+
+  /* ------------------ OUTPUT ------------------ */
 
   document.getElementById("outputBox").textContent = commands.join("\n");
   document.getElementById("warningBox").textContent = warnings.join("\n");
@@ -377,7 +410,7 @@ document.querySelectorAll(".tab-button").forEach(btn => {
 
 <footer>
   <p class="footer">
-    Version 0.25 | Last Edited: 26.01.26 17:40 CET
+    Version 0.28a | Last Edited: 30.01.26 09:12 CET
   </p>
 </footer>
 
