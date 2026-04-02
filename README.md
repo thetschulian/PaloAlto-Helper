@@ -23,4 +23,5 @@ This code will be auto deployed after each change to the following Cloudflare Pa
 ---
 
 # ToDos
-nothing planned yet
+1. Copy all Button for Commands
+2. add a second comma to the list for Hostgroups ?
