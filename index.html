@@ -62,27 +62,46 @@
       pointer-events: none;
       opacity: 0.6;
     }
+
+    .output-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 6px;
+    }
+    .copy-btn {
+      padding: 5px 12px;
+      background: #ddd;
+      border: 1px solid #aaa;
+      cursor: pointer;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    .copy-btn:hover { background: #ccc; }
+    .copy-btn.copied { background: #c8e6c9; border-color: #66bb6a; }
   </style>
 </head>
 
 <body>
 
+<h1 style="margin-top:0;">Palo Helper</h1>
+
 <div class="tabs">
-  <button class="tab-button active" data-tab="tab1">Object Generator</button>
-  <button class="tab-button" data-tab="tab2">tbd</button>
+  <button class="tab-button active" data-tab="tab1">Address</button>
+  <button class="tab-button" data-tab="tab2">URL Category</button>
 </div>
 
 <div id="tab1" class="tab-content active">
 
-<h2>🔧 Panorama <u>shared</u> Object Generator</h2>
+<h2>🔧 Panorama <u>shared</u> Address/Address-Group Generator</h2>
 
 <!-- GROUP PREFIX -->
 <label>Group Prefix + Group Name:</label>
 <div class="row">
-  <input type="checkbox" id="usePrefix">
+  <input type="checkbox" id="usePrefix" checked>
   <label for="usePrefix">Use Prefix</label>
 
-  <input type="text" id="prefixName" class="prefix-small disabled" placeholder="S_HG_" disabled>
+  <input type="text" id="prefixName" class="prefix-small" placeholder="S_HG_" value="S_HG">
 
   <input type="text" id="groupName" class="group-wide" placeholder="Destination Address Group Name">
 </div>
@@ -90,10 +109,10 @@
 <!-- OBJECT PREFIX -->
 <label>Object Name Prefix Options:</label>
 <div class="row">
-  <input type="checkbox" id="useObjectPrefix">
+  <input type="checkbox" id="useObjectPrefix" checked>
   <label for="useObjectPrefix">Use Prefix</label>
 
-  <input type="text" id="namePrefix" class="prefix-small disabled" placeholder="S_" disabled>
+  <input type="text" id="namePrefix" class="prefix-small" placeholder="S_" value="S_">
   <input type="text" id="altPrefix" class="group-wide disabled" placeholder="Optional grouping prefix (e.g. CLOUDFLARE)" disabled>
 </div>
 
@@ -116,15 +135,63 @@ google.de,Google Website
 <label>Input Preview (invalid lines highlighted):</label>
 <div class="highlight-box" id="previewBox"></div>
 
-<label>Generated CLI Output:</label>
+<div class="output-header">
+  <label style="margin:0;">Generated CLI Output:</label>
+  <button class="copy-btn" data-target="outputBox">📋 Copy all</button>
+</div>
 <div class="warning" id="warningBox"></div>
 <div class="output" id="outputBox"></div>
 
 </div>
 
 <div id="tab2" class="tab-content">
-  <h2>🔧 tbd</h2>
-  <p>tbd.</p>
+
+<h2>🔧 Panorama <u>shared</u> Custom URL Category Generator</h2>
+
+<!-- CATEGORY PREFIX + NAME -->
+<label>Category Prefix + Category Name:</label>
+<div class="row">
+  <input type="checkbox" id="urlUsePrefix" checked>
+  <label for="urlUsePrefix">Use Prefix</label>
+
+  <input type="text" id="urlPrefixName" class="prefix-small" placeholder="S_UC_" value="S_UC">
+
+  <input type="text" id="urlCatName" class="group-wide" placeholder="Custom URL Category Name">
+</div>
+
+<!-- TYPE -->
+<label>Category Type:</label>
+<div class="row">
+  <select id="urlType" style="padding:6px; font-family:monospace;">
+    <option value="URL List">URL List</option>
+    <option value="Category Match">Category Match</option>
+  </select>
+  <span style="opacity:0.7;">URL List = list of URLs &nbsp;|&nbsp; Category Match = list of existing PAN-DB category names</span>
+</div>
+
+<!-- DESCRIPTION -->
+<label>Description (optional):</label>
+<div class="row">
+  <input type="text" id="urlDesc" class="group-wide" placeholder="Description for the custom URL category">
+</div>
+
+<label id="urlListLabel">List of URLs (one per line). Protocol (http:// / https://) is stripped automatically:</label>
+<textarea id="urlInputList" rows="10" placeholder="*.example.com/
+example.com/*
+github.com
+https://docs.paloaltonetworks.com/
+bad url with spaces.com"></textarea>
+
+<label>Input Preview (invalid lines highlighted):</label>
+<div class="highlight-box" id="urlPreviewBox"></div>
+
+<div class="output-header">
+  <label style="margin:0;">Generated CLI Output:</label>
+  <button class="copy-btn" data-target="urlOutputBox">📋 Copy all</button>
+</div>
+<div class="warning" id="urlWarningBox"></div>
+<div class="output" id="urlOutputBox"></div>
+
 </div>
 
 <script>
@@ -365,7 +432,145 @@ function generateCommands() {
   document.getElementById("previewBox").innerHTML = previewLines.join("<br>");
 }
 
-/* ------------------ Event Listeners ------------------ */
+/* ====================================================================== */
+/* ==================== URL CATEGORY TAB (tab2) ========================= */
+/* ====================================================================== */
+
+/* Clean a single URL entry for a PAN-OS custom-url-category list.
+   - strips protocol (http:// / https://)
+   - trims whitespace
+   PAN-OS URL entries keep / . * ^ etc., so we do NOT sanitizeName() them. */
+function cleanUrlEntry(raw) {
+  let s = raw.trim();
+  s = s.replace(/^https?:\/\//i, "");   // strip protocol
+  return s.trim();
+}
+
+function updateUrlPrefixState() {
+  const use = document.getElementById("urlUsePrefix").checked;
+  const pre = document.getElementById("urlPrefixName");
+  pre.disabled = !use;
+  pre.classList.toggle("disabled", !use);
+}
+
+function updateUrlListLabel() {
+  const type = document.getElementById("urlType").value;
+  const label = document.getElementById("urlListLabel");
+  if (type === "Category Match") {
+    label.textContent =
+      "List of existing PAN-DB / custom category names (one per line):";
+  } else {
+    label.textContent =
+      "List of URLs (one per line). Protocol (http:// / https://) is stripped automatically:";
+  }
+}
+
+function generateUrlCommands() {
+  const type = document.getElementById("urlType").value;            // "URL List" | "Category Match"
+  const catNameRaw = document.getElementById("urlCatName").value.trim();
+  const descRaw = document.getElementById("urlDesc").value.trim();
+  const rawLines = document.getElementById("urlInputList").value.split("\n");
+
+  const warnings = [];
+  const previewLines = [];
+  const commands = [];
+  const members = [];
+  const seen = new Set();
+
+  /* ------------------ CATEGORY NAME + PREFIX ------------------ */
+  const usePrefix = document.getElementById("urlUsePrefix").checked;
+  let prefix = document.getElementById("urlPrefixName").value.trim();
+
+  if (usePrefix) {
+    prefix = sanitizeName(prefix);
+    if (prefix.length >= 1 && !prefix.endsWith("_")) prefix += "_";
+  } else {
+    prefix = "";
+  }
+
+  let catName = prefix + sanitizeName(catNameRaw);
+
+  if (catName === "") {
+    catName = "UNNAMED_CATEGORY";
+    warnings.push("⚠️ Category name is empty — using placeholder 'UNNAMED_CATEGORY'.");
+  }
+
+  if (catName.length > 63) {
+    warnings.push(`⚠️ Category name "${catName}" exceeds 63 characters and was truncated.`);
+  }
+  catName = catName.slice(0, 63);
+
+  /* ------------------ PROCESS LINES ------------------ */
+  rawLines.forEach((lineRaw, index) => {
+    const line = lineRaw.trim();
+
+    if (line === "") {
+      // silently skip blank lines, but note in preview
+      previewLines.push(`<span class="invalid">(empty)</span>`);
+      return;
+    }
+
+    let entry = (type === "Category Match") ? line : cleanUrlEntry(line);
+
+    /* Exact-match safety: a bare host like "xyz.com" also matches
+       "xyz.com.evil.com". Appending a trailing "/" forces an exact match.
+       Only do this for URL List entries that have no path/wildcard "/" yet. */
+    if (type === "URL List" && entry !== "" && !entry.includes("/")) {
+      entry += "/";
+    }
+
+    if (entry === "") {
+      warnings.push(`⚠️ Line ${index + 1} is empty after cleanup — skipped.`);
+      previewLines.push(`<span class="invalid">${escapeHtml(line)}</span>`);
+      return;
+    }
+
+    if (/\s/.test(entry)) {
+      warnings.push(`⚠️ Entry "${entry}" contains spaces — skipped.`);
+      previewLines.push(`<span class="invalid">${escapeHtml(line)}</span>`);
+      return;
+    }
+
+    if (seen.has(entry.toLowerCase())) {
+      warnings.push(`⚠️ Duplicate entry "${entry}" — skipped.`);
+      previewLines.push(`<span class="invalid">${escapeHtml(line)}</span>`);
+      return;
+    }
+    seen.add(entry.toLowerCase());
+
+    members.push(entry);
+
+    // show cleanup if the protocol was stripped
+    if (entry !== line) {
+      previewLines.push(`${escapeHtml(line)}  →  ${escapeHtml(entry)}`);
+    } else {
+      previewLines.push(escapeHtml(line));
+    }
+  });
+
+  /* ------------------ CLI COMMANDS ------------------ */
+  commands.push("configure");
+
+  // type is required on PAN-OS 9.0+; quotes needed because of the space
+  commands.push(`set shared profiles custom-url-category ${catName} type "${type}"`);
+
+  if (members.length > 0) {
+    commands.push(`set shared profiles custom-url-category ${catName} list [ ${members.join(" ")} ]`);
+  } else {
+    warnings.push("⚠️ No valid list entries — only the category shell will be created.");
+  }
+
+  if (descRaw !== "") {
+    commands.push(`set shared profiles custom-url-category ${catName} description "${escapeForCli(descRaw)}"`);
+  }
+
+  /* ------------------ OUTPUT ------------------ */
+  document.getElementById("urlOutputBox").textContent = commands.join("\n");
+  document.getElementById("urlWarningBox").textContent = warnings.join("\n");
+  document.getElementById("urlPreviewBox").innerHTML = previewLines.join("<br>");
+}
+
+/* ------------------ Event Listeners (tab1) ------------------ */
 
 document.getElementById("groupName").addEventListener("input", generateCommands);
 document.getElementById("altPrefix").addEventListener("input", generateCommands);
@@ -395,6 +600,60 @@ document.getElementById("useObjectPrefix").addEventListener("change", () => {
 updatePrefixStates();
 generateCommands();
 
+/* ------------------ Event Listeners (tab2) ------------------ */
+
+document.getElementById("urlUsePrefix").addEventListener("change", () => {
+  updateUrlPrefixState();
+  generateUrlCommands();
+});
+document.getElementById("urlPrefixName").addEventListener("input", generateUrlCommands);
+document.getElementById("urlCatName").addEventListener("input", generateUrlCommands);
+document.getElementById("urlDesc").addEventListener("input", generateUrlCommands);
+document.getElementById("urlInputList").addEventListener("input", generateUrlCommands);
+document.getElementById("urlType").addEventListener("change", () => {
+  updateUrlListLabel();
+  generateUrlCommands();
+});
+
+updateUrlPrefixState();
+updateUrlListLabel();
+generateUrlCommands();
+
+/* ------------------ Copy Buttons ------------------ */
+
+document.querySelectorAll(".copy-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const text = document.getElementById(btn.dataset.target).textContent;
+    const done = () => {
+      const original = btn.textContent;
+      btn.textContent = "✅ Copied!";
+      btn.classList.add("copied");
+      setTimeout(() => {
+        btn.textContent = original;
+        btn.classList.remove("copied");
+      }, 1500);
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+    } else {
+      fallbackCopy(text, done);
+    }
+  });
+});
+
+/* Fallback for non-secure (http://) contexts where clipboard API is blocked */
+function fallbackCopy(text, done) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); done(); } catch (e) {}
+  document.body.removeChild(ta);
+}
+
 /* ------------------ Tab Switching ------------------ */
 
 document.querySelectorAll(".tab-button").forEach(btn => {
@@ -410,7 +669,7 @@ document.querySelectorAll(".tab-button").forEach(btn => {
 
 <footer>
   <p class="footer">
-    Version 0.28a | Last Edited: 30.01.26 09:12 CET
+    Version 0.30a | Last Edited: 25.06.26
   </p>
 </footer>
 
