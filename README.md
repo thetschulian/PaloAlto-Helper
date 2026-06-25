@@ -8,6 +8,12 @@ This code will be auto deployed after each change to the following Cloudflare Pa
 ---
 
 # Changelog 
+> Version 0.30a:
+>> 1. Added second  Tab for URL Categorys
+>>> since it was often requested
+>>
+>> 2. Added Copy all Button 
+>>
 > Version 0.28a:
 >> 1. Max Lenght for all Objects to 63 
 >>> due to a Palo Limit of 63 chars
